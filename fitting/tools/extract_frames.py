@@ -14,7 +14,7 @@ def parse_args():
 args = parse_args()
 root_path = args.root_path
 os.makedirs(osp.join(root_path, 'frames'), exist_ok=True)
-
+data = []
 vidcap = cv2.VideoCapture(osp.join(root_path, 'video.mp4'))
 frame_num = int(vidcap.get(cv2.CAP_PROP_FRAME_COUNT))
 success, frame = vidcap.read()
@@ -22,5 +22,10 @@ frame_idx = 0
 while success:
     print(str(frame_idx) + '/' + str(frame_num), end='\r')
     cv2.imwrite(osp.join(root_path, 'frames', str(frame_idx) + '.png'), frame)
+    data.append(str(frame_idx)+"\n")
     success, frame = vidcap.read()
     frame_idx += 1
+with open(osp.join(root_path,"frame_list_all.txt"),"w") as f:
+	for i in data:
+		f.write(i)
+

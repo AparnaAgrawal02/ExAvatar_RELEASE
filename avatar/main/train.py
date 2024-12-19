@@ -66,7 +66,7 @@ def main():
                 ]
             screen += ['%s: %.4f' % ('loss_' + k, v.detach()) for k,v in loss.items()]
             trainer.logger.info(' '.join(screen))
-            print(cfg.model_dir)
+            #print(cfg.model_dir)
 
             trainer.tot_timer.toc()
             trainer.tot_timer.tic()

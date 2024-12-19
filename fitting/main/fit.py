@@ -53,13 +53,15 @@ def main():
         smplx_params[frame_idx]['jaw_pose'] = flame_params[frame_idx]['jaw_pose'] # share
         smplx_params[frame_idx]['leye_pose'] = flame_params[frame_idx]['leye_pose'] # share
         smplx_params[frame_idx]['reye_pose'] = flame_params[frame_idx]['reye_pose'] # share
+        
         smplx_params[frame_idx]['expr'] = flame_params[frame_idx]['expr'] # share
+        
         smplx_params[frame_idx]['trans'] = nn.Parameter(trainer.smplx_params[frame_idx]['trans'].cuda()) 
     smplx_shape = nn.Parameter(torch.zeros((smpl_x.shape_param_dim)).float().cuda())
     face_offset = nn.Parameter(torch.zeros((flame.vertex_num,3)).float().cuda())
     joint_offset = nn.Parameter(torch.zeros((smpl_x.joint['num'],3)).float().cuda())
     locator_offset = nn.Parameter(torch.zeros((smpl_x.joint['num'],3)).float().cuda())
-    
+    smplx_inputs_old = None
     for epoch in range(cfg.end_epoch):
         cfg.set_itr_opt_num(epoch)
 
@@ -114,7 +116,8 @@ def main():
                 # forwrad
                 trainer.set_lr(itr_opt)
                 trainer.optimizer.zero_grad()
-                loss, out = trainer.model(smplx_inputs, flame_inputs, data, return_output=((epoch==cfg.end_epoch-1) and (itr_opt==cfg.itr_opt_num-1)))
+                loss, out = trainer.model(smplx_inputs, flame_inputs, data, smplx_inputs_old,return_output=((epoch==cfg.end_epoch-1) and (itr_opt==cfg.itr_opt_num-1)))
+                smplx_inputs_old = smplx_inputs
                 loss = {k:loss[k].mean() for k in loss}
                 
                 # backward

@@ -37,7 +37,7 @@ class Config:
     lpips_weight = 0.2
 
     ## dataset
-    dataset = 'NeuMan' # Custom, NeuMan
+    dataset = 'Custom' # Custom, NeuMan
 
     ## others
     num_thread = 8
@@ -59,7 +59,7 @@ class Config:
     def set_args(self, subject_id, fit_pose_to_test=False, continue_train=False):
         self.subject_id = subject_id
         self.fit_pose_to_test = fit_pose_to_test
-        self.continue_train = continue_train
+        self.continue_train = False
         if self.fit_pose_to_test:
             self.smplx_param_lr = 1e-3
             self.model_dir = osp.join(self.model_dir, subject_id + '_fit_pose_to_test')

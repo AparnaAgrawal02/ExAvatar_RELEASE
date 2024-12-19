@@ -84,6 +84,7 @@ class Model(nn.Module):
             scene_asset = self.scene_gaussian({k: v[i] for k,v in data['cam_param'].items()})
             
             # get assets and offsets from human Gaussians
+        
             smplx_param = self.smplx_param_dict([data['frame_idx'][i]])[0]
             human_asset, human_asset_refined, human_offset, mesh_neutral_pose = self.human_gaussian(smplx_param, {k: v[i] for k,v in data['cam_param'].items()})
             

@@ -103,11 +103,14 @@ class Custom(torch.utils.data.Dataset):
             flame_param_path = osp.join(self.root_path, 'flame_init', 'flame_params', str(frame_idx) + '.json')
             with open(flame_param_path) as f:
                 flame_param = json.load(f)
+                if not flame_param['root_pose']:
+                    flame_param['is_valid'] =False
             if not flame_param['is_valid']:
                 for k in flame_param.keys():
                     if 'pose' in k:
                         flame_param[k] = torch.zeros((3)).float() # dummy
                 flame_param['expr'] = torch.zeros((flame.expr_param_dim)).float() # dummy
+            print(flame_param)
             for k,v in flame_param.items():
                 if k == 'is_valid':
                     continue
@@ -115,8 +118,11 @@ class Custom(torch.utils.data.Dataset):
                     flame_param[k] = torch.FloatTensor(v)
             flame_params[frame_idx] = flame_param
 
-        with open(osp.join(self.root_path, 'flame_init', 'shape_param.json')) as f:
-            flame_shape_param = torch.FloatTensor(json.load(f))
+        if osp.isfile(osp.join(self.root_path, 'flame_init', 'shape_param.json')):
+            with open(osp.join(self.root_path, 'flame_init', 'shape_param.json')) as f:
+                flame_shape_param = torch.FloatTensor(json.load(f))
+        else:
+            flame_shape_param = torch.zeros((flame.shape_param_dim)).float()
         return cam_params, img_paths, kpts, smplx_params, flame_params, flame_shape_param, frame_idx_list
     
     def get_smplx_trans_init(self):

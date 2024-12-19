@@ -5,16 +5,22 @@ from config import cfg
 from utils.smplx import smplx
 from pytorch3d.io import load_obj
 
+
+print('Loading SMPL-X model...')
+
 class SMPLX(object):
     def __init__(self):
         self.shape_param_dim = 100
         self.expr_param_dim = 50
+        print(cfg.human_model_path,"*"*14)
         self.layer_arg = {'create_global_orient': False, 'create_body_pose': False, 'create_left_hand_pose': False, 'create_right_hand_pose': False, 'create_jaw_pose': False, 'create_leye_pose': False, 'create_reye_pose': False, 'create_betas': False, 'create_expression': False, 'create_transl': False}
-        self.layer = smplx.create(cfg.human_model_path, 'smplx', gender='male', num_betas=self.shape_param_dim, num_expression_coeffs=self.expr_param_dim, use_pca=False, use_face_contour=True, **self.layer_arg)
+        
         self.face_vertex_idx = np.load(osp.join(cfg.human_model_path, 'smplx', 'SMPL-X__FLAME_vertex_ids.npy'))
+        self.layer = smplx.create(cfg.human_model_path, 'smplx', gender='male', num_betas=self.shape_param_dim, num_expression_coeffs=self.expr_param_dim, use_pca=False, use_face_contour=True, **self.layer_arg)
         self.layer = self.get_expr_from_flame(self.layer) 
         self.vertex_num = 10475
         self.face = self.layer.faces.astype(np.int64)
+
         self.flip_corr = np.load(osp.join(cfg.human_model_path, 'smplx', 'smplx_flip_correspondences.npz'))
         self.vertex_uv, self.face_uv = self.load_uv_info()
 
@@ -100,5 +106,6 @@ class SMPLX(object):
         vertex_uv = aux.verts_uvs.numpy().astype(np.float32) # (V`, 2)
         face_uv = faces.textures_idx.numpy().astype(np.int64) # (F, 3). 0-based
         return vertex_uv, face_uv
-
+print(cfg.human_model_path)
+#breakpoint()
 smpl_x = SMPLX()

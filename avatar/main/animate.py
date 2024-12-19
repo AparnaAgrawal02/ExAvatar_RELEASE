@@ -51,15 +51,20 @@ def main():
         motion_name = motion_path[:-1].split('/')[-1]
     else:        
         motion_name = motion_path.split('/')[-1]
-    frame_idx_list = sorted([int(x.split('/')[-1][:-5]) for x in glob(osp.join(args.motion_path, 'smplx_optimized', 'smplx_params_smoothed', '*.json'))])
+    frame_idx_list = sorted([int(x.split('/')[-1][:-5]) for x in glob(osp.join(args.motion_path, 'smplx_optimized', 'smplx_params', '*.json'))])
     render_shape = cv2.imread(osp.join(args.motion_path, 'frames', str(frame_idx_list[0]) + '.png')).shape[:2]
     video_out = cv2.VideoWriter(motion_name + '.mp4', cv2.VideoWriter_fourcc(*'mp4v'), 30, (render_shape[1]*3, render_shape[0]))
     for frame_idx in tqdm(frame_idx_list):
         with open(osp.join(args.motion_path, 'cam_params', str(frame_idx) + '.json')) as f:
             cam_param = {k: torch.FloatTensor(v).cuda() for k,v in json.load(f).items()}
-        with open(osp.join(args.motion_path, 'smplx_optimized', 'smplx_params_smoothed', str(frame_idx) + '.json')) as f:
+        with open(osp.join(args.motion_path, 'smplx_optimized', 'smplx_params', str(frame_idx) + '.json')) as f:
             smplx_param = {k: torch.FloatTensor(v).cuda().view(-1) for k,v in json.load(f).items()}
+        #print(smplx_param) 
+        #smplx_param['body_pose'][:15] = 0.0
 
+        print(smplx_param['body_pose'].shape)
+        #zero all the joints
+        #smplx_param['body_pose'] = torch.zeros(1, 63).cuda()
         # forward
         with torch.no_grad():
             human_asset, human_asset_refined, human_offset, mesh_neutral_pose = tester.model.module.human_gaussian(smplx_param, cam_param)
@@ -67,7 +72,16 @@ def main():
        
         # smplx mesh render
         root_pose = smplx_param['root_pose'].view(1,3)
+      
         body_pose = smplx_param['body_pose'].view(1,(len(smpl_x.joint_part['body'])-1)*3)
+        #4,5,8,7,10,
+        #make the above joints to be zero  #legs zero
+        # body_pose[:,4*3:5*3] = 0
+        # body_pose[:,7*3:8*3] = 0
+        # body_pose[:,10*3:11*3] = 0
+        # body_pose = np.zeros((1, 63))
+
+        print(body_pose.shape)
         jaw_pose = smplx_param['jaw_pose'].view(1,3)
         leye_pose = smplx_param['leye_pose'].view(1,3)
         reye_pose = smplx_param['reye_pose'].view(1,3)
@@ -78,6 +92,21 @@ def main():
         shape = tester.model.module.human_gaussian.shape_param[None]
         face_offset = smpl_x.face_offset.cuda()[None]
         joint_offset = tester.model.module.human_gaussian.joint_offset[None]
+        print(joint_offset.shape)
+        #tensor([[0.0144, 0.0052, 0.0060]], device='cuda:0', grad_fn=<SliceBackward0>)
+        with torch.no_grad():
+            print(joint_offset[:,5,:])
+            joint_offset[:,5,:]= 0.0
+            print(joint_offset[:,5,:])
+            joint_offset[:,6,:]= 0.0
+
+            joint_offset[:,8,:] = 0.0
+
+            joint_offset[:,9,:] = 0.0
+
+            joint_offset[:,11,:] = 0.0
+
+            joint_offset[:,12,:] = 0.0
         output = tester.model.module.smplx_layer(global_orient=root_pose, body_pose=body_pose, jaw_pose=jaw_pose, leye_pose=leye_pose, reye_pose=reye_pose, left_hand_pose=lhand_pose, right_hand_pose=rhand_pose, expression=expr, betas=shape, transl=trans, face_offset=face_offset, joint_offset=joint_offset)
         mesh = output.vertices[0]
         mesh_render = render_mesh(mesh, smpl_x.face, cam_param, np.ones((render_shape[0],render_shape[1],3), dtype=np.float32)*255).astype(np.uint8)

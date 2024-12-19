@@ -76,6 +76,7 @@ class Custom(torch.utils.data.Dataset):
             assert 0, 'camera parameters are not available'
 
         # load image paths
+        print(self.root_path)
         img_path_list = glob(osp.join(self.root_path, 'frames', '*.png'))
         for img_path in img_path_list:
             frame_idx = int(img_path.split('/')[-1][:-4])
@@ -156,9 +157,12 @@ class Custom(torch.utils.data.Dataset):
         return len(self.frame_idx_list)
     
     def __getitem__(self, idx):
+
         frame_idx = self.frame_idx_list[idx]
 
         # load image
+        print(self.img_paths)
+        print(self.root_path)
         img = load_img(self.img_paths[frame_idx])
         img_height, img_width = img.shape[:2]
         img = self.transform(img.astype(np.float32))/255.

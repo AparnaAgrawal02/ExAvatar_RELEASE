@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from nets.layer import XY2UV, get_face_index_map_uv
-from nets.loss import CoordLoss, PoseLoss, LaplacianReg, EdgeLengthLoss, FaceOffsetSymmetricReg, JointOffsetSymmetricReg
+from nets.loss import CoordLoss, PoseLoss, LaplacianReg, EdgeLengthLoss, FaceOffsetSymmetricReg, JointOffsetSymmetricReg,RelativeHandLoss,UpstandingLoss,UnseenLoss
 from utils.smpl_x import smpl_x
 from utils.flame import flame
 from pytorch3d.transforms import rotation_6d_to_matrix, matrix_to_axis_angle
@@ -18,6 +18,9 @@ class Model(nn.Module):
         self.flame_layer = copy.deepcopy(flame.layer).cuda()
         self.coord_loss = CoordLoss()
         self.pose_loss = PoseLoss()
+        self.relative_hand_loss = RelativeHandLoss()
+        self.unseen_loss =UnseenLoss()
+        self.upstanding_loss = UpstandingLoss()
         self.lap_reg = LaplacianReg(flame.vertex_num, flame.face)
         self.edge_length_loss = EdgeLengthLoss(flame.face)
         self.face_offset_sym_reg = FaceOffsetSymmetricReg()
@@ -135,7 +138,7 @@ class Model(nn.Module):
         else:
             expr = torch.zeros_like(flame_param['expr'])
 
-        output = self.flame_layer(global_orient=root_pose, neck_pose=neck_pose, jaw_pose=jaw_pose, leye_pose=leye_pose, reye_pose=reye_pose, expression=expr, betas=flame_param['shape'])
+        output = self.flame_layer(global_orient=root_pose, neck_pose=neck_pose, jaw_pose=jaw_pose, leye_pose=leye_pose, reye_pose=reye_pose, expression=expr, betas=flame_param['shape'][:,:100])
 
         # camera-centered 3D coordinate
         mesh_cam = output.vertices
@@ -178,7 +181,7 @@ class Model(nn.Module):
         pose = torch.cat((flame_param['neck_pose'][:,None,:], flame_param['jaw_pose'][:,None,:], flame_param['leye_pose'][:,None,:], flame_param['reye_pose'][:,None,:]),1) # follow flame.joint['name'] without the root joint
         return pose
    
-    def forward(self, smplx_inputs, flame_inputs, data, return_output):
+    def forward(self, smplx_inputs, flame_inputs, data,smplx_inputs_old, return_output):
         smplx_inputs = self.process_input_smplx_param(smplx_inputs) 
         flame_inputs = self.process_input_flame_param(flame_inputs) 
        
@@ -206,11 +209,18 @@ class Model(nn.Module):
 
         # loss functions
         loss = {}
+        smooth_loss_weight= cfg.smooth_loss_weight
+        unseen_left_weight= cfg.unseen_left_weight
+        unseen_right_weight= cfg.unseen_right_weight
+        upstanding_loss_weight= cfg.upstanding_loss_weight
         weight = torch.ones_like(smplx_kpt_proj)
         if not cfg.warmup:
             weight[:,[i for i in range(smpl_x.kpt['num']) if 'Face' in smpl_x.kpt['name'][i]],:] = 0
             weight[face_valid,:,:] = 1 # do not use 2D loss if face is not visible
-        loss['smplx_kpt_proj'] = self.coord_loss(smplx_kpt_proj, data['kpt_img'], data['kpt_valid'], smplx_kpt_cam.detach()) * weight
+        loss['smplx_kpt_proj']= self.coord_loss(smplx_kpt_proj, data['kpt_img'], data['kpt_valid'], smplx_kpt_cam.detach()) * weight
+##added 
+        loss['relative_intrahand_loss'],loss['relative_interhand_loss'] = self.relative_hand_loss(smplx_kpt_proj, data['kpt_img'], data['kpt_valid'], smplx_kpt_cam.detach()) 
+        
         loss['smplx_kpt_proj_wo_fo'] = self.coord_loss(smplx_kpt_proj_wo_fo, data['kpt_img'], data['kpt_valid'], smplx_kpt_cam.detach()) * weight
         loss['flame_kpt_proj'] = torch.abs(flame_kpt_proj - data['kpt_img'][:,smpl_x.kpt['part_idx']['face'],:]) * data['kpt_valid'][:,smpl_x.kpt['part_idx']['face'],:] * weight[:,smpl_x.kpt['part_idx']['face'],:]
         if cfg.warmup:
@@ -220,8 +230,13 @@ class Model(nn.Module):
             loss['smplx_mesh'] = torch.abs((smplx_mesh_cam_wo_fo - smplx_kpt_cam_wo_fo[:,smpl_x.kpt['root_idx'],None,:]) - \
                                             (smplx_mesh_cam_init - smplx_kpt_cam_init[:,smpl_x.kpt['root_idx'],None,:])) * 0.1 
             smplx_input_pose = self.get_smplx_full_pose(smplx_inputs)
+            
             smplx_init_pose = self.get_smplx_full_pose(data['smplx_param'])
             loss['smplx_pose'] = self.pose_loss(smplx_input_pose, smplx_init_pose) * 0.1
+#added      
+            loss['stand_up'] = self.upstanding_loss(smplx_input_pose)
+#added      
+            loss['unseen'] = self.unseen_loss(smplx_input_pose, data['kpt_valid'])
             loss['smplx_pose_reg'] = torch.stack([smplx_input_pose[:,i,0] for i in range(smpl_x.joint['num']) if smpl_x.joint['name'][i] in ['Spine_1', 'Spine_2', 'Spine_3', 'Neck', 'Head']],1) ** 2  # prevent forward head posture
 
             flame_input_pose = self.get_flame_full_pose(flame_inputs)

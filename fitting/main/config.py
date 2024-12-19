@@ -9,7 +9,7 @@ class Config:
     proj_shape = (8, 8)
     uvmap_shape = (512, 512)
     lr_dec_factor = 10
-    end_epoch = 3
+    end_epoch = 2
     batch_size = 64
     body_3d_size = 2 # meter
 
@@ -17,10 +17,15 @@ class Config:
     dataset = 'Custom' # 'NeuMan', 'Custom', 'XHumans'
 
     ## others
-    num_thread = 16
+    num_thread = 1
     gpu_ids = '0'
     num_gpus = 1
 
+    ##loss_weight
+    smooth_loss_weight=8e3,
+    unseen_left_weight=3e3,
+    unseen_right_weight=3e3,
+    upstanding_loss_weight=3e5,
     ## directory
     cur_dir = osp.dirname(os.path.abspath(__file__))
     root_dir = osp.join(cur_dir, '..')
@@ -40,9 +45,9 @@ class Config:
     
     def set_itr_opt_num(self, epoch):
         if epoch == 0:
-            self.itr_opt_num = 500
+            self.itr_opt_num = 150
         else:
-            self.itr_opt_num = 250
+            self.itr_opt_num = 50
 
     def set_stage(self, epoch, itr):
         if epoch == 0:

@@ -51,14 +51,14 @@ else:
         sys.exit()
 
 # DECA (get initial FLAME parameters)
-os.chdir('./DECA')
-cmd = 'python run_deca.py --root_path ' + root_path
-print(cmd)
-result = os.system(cmd)
-if (result != 0):
-    print('something bad happened when running DECA. terminate the script.')
-    sys.exit()
-os.chdir('..')
+# os.chdir('./DECA')
+# cmd = 'python run_deca.py --root_path ' + root_path
+# print(cmd)
+# result = os.system(cmd)
+# if (result != 0):
+#     print('something bad happened when running DECA. terminate the script.')
+#     sys.exit()
+# os.chdir('..')
 
 # Hand4Whole (get initial SMPLX parameters)
 os.chdir('./Hand4Whole_RELEASE/demo')
@@ -97,19 +97,19 @@ if (result != 0):
     sys.exit()
 
 # unwrap textures of FLAME
-os.chdir('../main')
-cmd = 'python unwrap.py --subject_id ' + subject_id
-print(cmd)
-result = os.system(cmd)
-if (result != 0):
-    print('something bad happened when unwrapping the face images to FLAME UV texture. terminate the script.')
-    sys.exit()
-os.chdir('../tools')
-cmd = 'mv ' + osp.join('..', 'output', 'result', subject_id, 'unwrapped_textures', '*') + ' ' + osp.join(root_path, 'smplx_optimized', '.')
-result = os.system(cmd)
-if (result != 0):
-    print('something bad happened when moving the unwrapped FLAME UV texture to root_path. terminate the script.')
-    sys.exit()
+# os.chdir('../main')
+# cmd = 'python unwrap.py --subject_id ' + subject_id
+# print(cmd)
+# result = os.system(cmd)
+# if (result != 0):
+#     print('something bad happened when unwrapping the face images to FLAME UV texture. terminate the script.')
+#     sys.exit()
+# os.chdir('../tools')
+# cmd = 'mv ' + osp.join('..', 'output', 'result', subject_id, 'unwrapped_textures', '*') + ' ' + osp.join(root_path, 'smplx_optimized', '.')
+# result = os.system(cmd)
+# if (result != 0):
+#     print('something bad happened when moving the unwrapped FLAME UV texture to root_path. terminate the script.')
+#     sys.exit()
 
 # smooth SMPLX
 cmd = 'python smooth_smplx_params.py --root_path ' + root_path

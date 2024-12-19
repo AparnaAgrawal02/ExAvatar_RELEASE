@@ -66,9 +66,135 @@ class CoordLoss(nn.Module):
                     else:
                         weight[i,smpl_x.kpt['part_idx']['rhand'],:] = 0
                         weight[i,smpl_x.kpt['name'].index('R_Wrist'),:] = 0
+
+                #unseen should be at rest position
+                #print(kpt_proj_gt.shape,"here")
+
+    
+
+
+        loss = torch.abs(kpt_proj - kpt_proj_gt) * kpt_valid * weight 
+        return loss 
+    
+class RelativeHandLoss(nn.Module):
+    def __init__(self):
+        super(RelativeHandLoss, self).__init__()
+ 
+    def get_bbox(self, kpt_proj, kpt_valid, extend_ratio=1.2):
+        x, y = kpt_proj[kpt_valid[:,0]>0,0], kpt_proj[kpt_valid[:,0]>0,1]
+        xmin, ymin = torch.min(x), torch.min(y)
+        xmax, ymax = torch.max(x), torch.max(y)
+
+        x_center = (xmin+xmax)/2.; width = xmax-xmin;
+        xmin = x_center - 0.5 * width * extend_ratio
+        xmax = x_center + 0.5 * width * extend_ratio
         
-        loss = torch.abs(kpt_proj - kpt_proj_gt) * kpt_valid * weight
-        return loss
+        y_center = (ymin+ymax)/2.; height = ymax-ymin;
+        ymin = y_center - 0.5 * height * extend_ratio
+        ymax = y_center + 0.5 * height * extend_ratio
+        
+        bbox = torch.FloatTensor([xmin, ymin, xmax-xmin, ymax-ymin]).cuda()
+        return bbox
+    
+    def get_iou(self, box1, box2):
+        box1 = box1.clone()
+        box2 = box2.clone()
+        box1[2:] += box1[:2] # xywh -> xyxy
+        box2[2:] += box2[:2] # xywh -> xyxy
+
+        xmin = torch.maximum(box1[0], box2[0])
+        ymin = torch.maximum(box1[1], box2[1])
+        xmax = torch.minimum(box1[2], box2[2])
+        ymax = torch.minimum(box1[3], box2[3])
+        inter_area = torch.maximum(torch.zeros_like(xmax-xmin), xmax-xmin) * torch.maximum(torch.zeros_like(ymax-ymin), ymax-ymin)
+     
+        box1_area = (box1[2] - box1[0]) * (box1[3] - box1[1])
+        box2_area = (box2[2] - box2[0]) * (box2[3] - box2[1])
+        union_area = box1_area + box2_area - inter_area
+
+        iou = inter_area / (union_area + 1e-5)
+        return iou
+   
+    def forward(self, kpt_proj, kpt_proj_gt, kpt_valid, kpt_cam):
+        weight = torch.ones_like(kpt_proj)
+
+        # if boxes of two hands have high iou, ignore hands with bigger depth
+        # 2D keypoint detector often gets confused between left and right hands when one hand is occluded by the other hand
+        with torch.no_grad():
+            batch_size = weight.shape[0]
+            for i in range(batch_size):
+                if (kpt_valid[i,smpl_x.kpt['part_idx']['lhand'],:].sum() == 0) or (kpt_valid[i,smpl_x.kpt['part_idx']['rhand'],:].sum()) == 0:
+                    continue
+                lhand_bbox = self.get_bbox(kpt_proj[i,smpl_x.kpt['part_idx']['lhand'],:], kpt_valid[i,smpl_x.kpt['part_idx']['lhand'],:])
+                rhand_bbox = self.get_bbox(kpt_proj[i,smpl_x.kpt['part_idx']['rhand'],:], kpt_valid[i,smpl_x.kpt['part_idx']['rhand'],:])
+                iou = self.get_iou(lhand_bbox, rhand_bbox)
+
+                if float(iou) > 0.5:
+                    if kpt_cam[i,smpl_x.kpt['part_idx']['lhand'],2].mean() > kpt_cam[i,smpl_x.kpt['part_idx']['rhand'],2].mean():
+                        weight[i,smpl_x.kpt['part_idx']['lhand'],:] = 0
+                        weight[i,smpl_x.kpt['name'].index('L_Wrist'),:] = 0
+                    else:
+                        weight[i,smpl_x.kpt['part_idx']['rhand'],:] = 0
+                        weight[i,smpl_x.kpt['name'].index('R_Wrist'),:] = 0
+
+                #unseen should be at rest position
+                #print(kpt_proj_gt.shape,kpt_proj.shape)        #relative distance od left hand and right hand
+        #oi_gt = kpt_proj_gt[:,smpl_x.kpt['part_idx']['lhand'],:] - kpt_proj_gt[:,smpl_x.kpt['part_idx']['rhand'],:]
+        #oi_pred = kpt_proj[:,smpl_x.kpt['part_idx']['lhand'],:] - kpt_proj[:,smpl_x.kpt['part_idx']['rhand'],:]
+        # calculate the distance from each right-hand joint to each left-hand joint, respectively.
+        oi_gt =[]
+        for joint in smpl_x.kpt['part_idx']['lhand']:
+            oi_gt.append(kpt_proj_gt[:,joint,:].unsqueeze(1) - kpt_proj_gt[:,smpl_x.kpt['part_idx']['rhand'],:])
+        oi_gt = torch.cat(oi_gt,1)
+        oi_pred =[]
+        for joint in smpl_x.kpt['part_idx']['lhand']:
+            oi_pred.append(kpt_proj[:,joint,:].unsqueeze(1) - kpt_proj[:,smpl_x.kpt['part_idx']['rhand'],:])
+        oi_pred = torch.cat(oi_pred,1)
+        # for i in range(oi_gt.shape[0]):
+        #     if kpt_valid[i,smpl_x.kpt['part_idx']['lhand'],:].sum()  or kpt_valid[i,smpl_x.kpt['part_idx']['rhand'],:].sum() == 0:
+        #         oi_gt[i,:,:] = 0
+        #         oi_pred[i,:,:] = 0
+        loss = torch.abs(oi_gt - oi_pred) 
+        #inter hand loss
+        #right hand
+        oi_gt =[]
+        for joint in smpl_x.kpt['part_idx']['rhand']:
+            oi_gt.append(kpt_proj_gt[:,joint,:].unsqueeze(1) - kpt_proj_gt[:,smpl_x.kpt['part_idx']['rhand'],:])
+        oi_gt = torch.cat(oi_gt,1)
+        oi_pred =[]
+        for joint in smpl_x.kpt['part_idx']['rhand']:
+            oi_pred.append(kpt_proj[:,joint,:].unsqueeze(1) - kpt_proj[:,smpl_x.kpt['part_idx']['rhand'],:])
+        oi_pred = torch.cat(oi_pred,1)
+        print(oi_gt.shape,oi_pred.shape,weight.shape,kpt_valid.shape)
+        for i in range(oi_gt.shape[0]):
+            if kpt_valid[i,smpl_x.kpt['part_idx']['rhand'],:].sum() == 0:
+                oi_gt[i,:,:] = 0
+                oi_pred[i,:,:] = 0
+        loss2 = torch.abs(oi_gt - oi_pred)
+        #left hand
+
+        oi_gt =[]
+        for joint in smpl_x.kpt['part_idx']['lhand']:
+            oi_gt.append(kpt_proj_gt[:,joint,:].unsqueeze(1) - kpt_proj_gt[:,smpl_x.kpt['part_idx']['lhand'],:])
+        oi_gt = torch.cat(oi_gt,1)
+        oi_pred =[]
+        for joint in smpl_x.kpt['part_idx']['lhand']:
+            oi_pred.append(kpt_proj[:,joint,:].unsqueeze(1) - kpt_proj[:,smpl_x.kpt['part_idx']['lhand'],:])
+        oi_pred = torch.cat(oi_pred,1)
+        for i in range(oi_gt.shape[0]):
+            if kpt_valid[i,smpl_x.kpt['part_idx']['lhand'],:].sum() == 0:
+                oi_gt[i,:,:] = 0
+                oi_pred[i,:,:] = 0
+        loss1 = torch.abs(oi_gt - oi_pred) 
+        return loss , loss1+loss2
+
+        #print(oi_gt.shape,oi_pred.shape,weight.shape,kpt_valid.shape)
+        #relative haand loss
+        #oi_loss = torch.abs(oi_gt - oi_pred) #* kpt_valid[:,smpl_x.kpt['part_idx']['lhand'],:] * kpt_valid[:,smpl_x.kpt['part_idx']['rhand'],:] * weight[:,smpl_x.kpt['part_idx']['lhand'],:] * weight[:,smpl_x.kpt['part_idx']['rhand'],:]
+    
+    
+
+        return  oi_loss
 
 class PoseLoss(nn.Module):
     def __init__(self):
@@ -86,6 +212,53 @@ class PoseLoss(nn.Module):
         loss = torch.abs(pose_out - pose_gt)
         return loss
 
+class UnseenLoss(nn.Module):
+    def __init__(self):
+        super(UnseenLoss, self).__init__()
+
+    def forward(self, pose_out, kpt_valid):
+        #if kpt is zero that part should be in rest position
+        right_hand_valid = kpt_valid[:,smpl_x.kpt['part_idx']['rhand'],:]
+        left_hand_valid = kpt_valid[:,smpl_x.kpt['part_idx']['lhand'],:]
+
+        #smplx right hand joints
+        right_hand_joints = pose_out[:,smpl_x.joint['part_idx']['rhand'],:]
+        left_hand_joints = pose_out[:,smpl_x.joint['part_idx']['lhand'],:]
+
+        #if right hand is not visible then right hand should be in rest position
+        #turn 0 to 1 and 1 to 0
+        #if more that 50% of the joints are not visible then that part should be in rest position
+        batch_size = pose_out.shape[0]
+        right_hand_valid = right_hand_valid.sum(1) > 0.5 * right_hand_valid.shape[1]
+        left_hand_valid = left_hand_valid.sum(1) > 0.5 * left_hand_valid.shape[1]
+
+        print(right_hand_valid.shape, left_hand_valid.shape)
+
+        right_hand_loss = torch.abs(right_hand_joints) * right_hand_valid[:,None]
+        left_hand_loss = torch.abs(left_hand_joints) * left_hand_valid[:,None]
+
+        return right_hand_loss + left_hand_loss 
+
+
+class UpstandingLoss(nn.Module):
+    def __init__(self):
+        super(UpstandingLoss, self).__init__()
+
+    def forward(self, pose_out):
+
+
+        loss = torch.abs(pose_out[:,:11,:])
+        return loss
+
+class SmoothL1Loss(nn.Module):
+    def __init__(self):
+        super(SmoothL1Loss, self).__init__()
+
+    def forward(self, pred, old):
+        print(pred.shape,old.shape)
+        loss = torch.abs(pred - old)
+        return loss
+    
 class LaplacianReg(nn.Module):
     def __init__(self, vertex_num, face):
         super(LaplacianReg, self).__init__()
@@ -108,6 +281,8 @@ class LaplacianReg(nn.Module):
         return neighbor_idxs, neighbor_weights
     
     def compute_laplacian(self, x, neighbor_idxs, neighbor_weights):
+        #print devices
+        #print(x.device, neighbor_idxs.device, neighbor_weights.device)
         lap = x + (x[:, neighbor_idxs] * neighbor_weights[None, :, :, None]).sum(2)
         return lap
 
